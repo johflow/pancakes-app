@@ -11,9 +11,14 @@ export default function Home() {
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
-  const [orderPlaced, setOrderPlaced] = useState(false);
+  
+  // New State for Tracking User's Order & Cooldown
+  const [myOrderId, setMyOrderId] = useState<string | null>(null);
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+  const [currentTime, setCurrentTime] = useState(Date.now());
 
   useEffect(() => {
+    // Fetch Session
     const fetchSession = async () => {
       const sessionDoc = await getDoc(doc(db, "settings", "session"));
       if (sessionDoc.exists() && sessionDoc.data().isActive) {
@@ -23,6 +28,7 @@ export default function Home() {
     };
     fetchSession();
 
+    // Listen to Orders
     const unsubscribe = onSnapshot(collection(db, "orders"), (snapshot) => {
       const activeOrders = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as any))
@@ -32,7 +38,19 @@ export default function Home() {
       setOrders(activeOrders);
     });
 
-    return () => unsubscribe();
+    // Load Local Storage Data
+    const savedOrderId = localStorage.getItem("pancakeOrderId");
+    const savedCooldown = localStorage.getItem("pancakeCooldown");
+    if (savedOrderId) setMyOrderId(savedOrderId);
+    if (savedCooldown) setCooldownUntil(parseInt(savedCooldown, 10));
+
+    // Update current time every minute for the cooldown timer
+    const interval = setInterval(() => setCurrentTime(Date.now()), 60000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, []);
 
   const handleToggleIngredient = (ingredient: string) => {
@@ -45,15 +63,27 @@ export default function Home() {
     e.preventDefault();
     if (!name) return alert("Need a name!");
     
-    await addDoc(collection(db, "orders"), {
+    const docRef = await addDoc(collection(db, "orders"), {
       name,
       contact,
       ingredients: selectedIngredients,
       status: "In Queue",
       createdAt: serverTimestamp()
     });
-    setOrderPlaced(true);
+
+    // Set 30 minute cooldown (30 mins * 60 secs * 1000 ms)
+    const cooldownTime = Date.now() + (30 * 60 * 1000);
+    
+    setMyOrderId(docRef.id);
+    setCooldownUntil(cooldownTime);
+    localStorage.setItem("pancakeOrderId", docRef.id);
+    localStorage.setItem("pancakeCooldown", cooldownTime.toString());
   };
+
+  // Derived State
+  const myActiveOrder = orders.find(o => o.id === myOrderId);
+  const isOnCooldown = cooldownUntil && cooldownUntil > currentTime;
+  const minutesLeft = cooldownUntil ? Math.ceil((cooldownUntil - currentTime) / 60000) : 0;
 
   if (!sessionActive) {
     return (
@@ -70,7 +100,28 @@ export default function Home() {
       <div className="max-w-2xl mx-auto">
         <h1 className="text-4xl font-bold mb-8 text-center text-gray-900">🥞 Will's Party Pancakes</h1>
         
-        {!orderPlaced ? (
+        {/* Dynamic Top Section: Order Form OR Ticket OR Cooldown */}
+        {myActiveOrder ? (
+          <div className="bg-blue-50 border-2 border-blue-400 p-8 rounded-xl mb-10 text-center shadow-md">
+            <h2 className="text-2xl font-bold text-blue-800 mb-2">🎟️ Your Pancake Ticket</h2>
+            <p className="text-gray-700 mb-4">Show this to the chef if needed.</p>
+            <div className="inline-block bg-white border border-blue-200 px-6 py-4 rounded-lg shadow-sm">
+              <p className="text-xl font-bold text-gray-900">{myActiveOrder.name}</p>
+              <p className="text-gray-600">{myActiveOrder.ingredients?.join(", ")}</p>
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <span className="text-sm text-gray-500 uppercase tracking-widest">Current Status</span><br/>
+                <span className={`text-xl font-black uppercase ${myActiveOrder.status === 'Ready' ? 'text-yellow-600 animate-pulse' : 'text-blue-600'}`}>
+                  {myActiveOrder.status}
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : isOnCooldown ? (
+           <div className="bg-orange-50 border border-orange-200 p-8 rounded-xl mb-10 text-center shadow-sm">
+            <h2 className="text-2xl font-bold text-orange-700 mb-2">Whoa there, hotcakes!</h2>
+            <p className="text-gray-700 text-lg">You can place another order in <strong>{minutesLeft} minute{minutesLeft !== 1 ? 's' : ''}</strong>.</p>
+          </div>
+        ) : (
           <form onSubmit={submitOrder} className="bg-white p-8 rounded-xl shadow-md border border-gray-200 mb-10">
             <h2 className="text-2xl font-bold mb-6 text-gray-800">Place Your Order</h2>
             <input className="w-full p-3 mb-4 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Your Name/Nickname" value={name} onChange={e => setName(e.target.value)} required />
@@ -86,28 +137,29 @@ export default function Home() {
             </div>
             <button type="submit" className="w-full bg-green-600 text-white p-4 rounded-lg font-bold text-xl hover:bg-green-700 transition-colors shadow-sm">Order Pancake</button>
           </form>
-        ) : (
-          <div className="bg-green-50 border border-green-200 p-8 rounded-xl mb-10 text-center shadow-sm">
-            <h2 className="text-3xl font-bold text-green-700 mb-2">Order Placed!</h2>
-            <p className="text-gray-700 text-lg">Keep an eye on the queue below.</p>
-          </div>
         )}
 
+        {/* The Live Queue */}
         <h2 className="text-3xl font-bold mb-6 text-gray-900 border-b-2 border-gray-200 pb-2">Live Queue</h2>
         <div className="space-y-4">
-          {orders.map((order, index) => (
-            <div key={order.id} className={`p-5 rounded-xl flex justify-between items-center transition-all ${order.status === 'Ready' ? 'bg-yellow-100 border-2 border-yellow-400 shadow-md animate-pulse' : 'bg-white border border-gray-200 shadow-sm'}`}>
-              <div>
-                <span className="font-bold text-2xl text-gray-900 mr-4">#{index + 1}</span>
-                <span className="text-xl font-semibold text-gray-800">{order.name}</span>
-                <p className="text-gray-600 text-md mt-1">{order.ingredients?.join(", ")}</p>
+          {orders.map((order, index) => {
+            const isMe = order.id === myOrderId;
+            return (
+              <div key={order.id} className={`p-5 rounded-xl flex justify-between items-center transition-all ${order.status === 'Ready' ? 'bg-yellow-100 border-2 border-yellow-400 shadow-md animate-pulse' : isMe ? 'bg-blue-50 border-2 border-blue-400 shadow-md' : 'bg-white border border-gray-200 shadow-sm'}`}>
+                <div>
+                  <span className="font-bold text-2xl text-gray-900 mr-4">#{index + 1}</span>
+                  <span className="text-xl font-semibold text-gray-800">
+                    {order.name} {isMe && <span className="text-sm bg-blue-600 text-white px-2 py-1 rounded-full ml-2 align-middle">YOU</span>}
+                  </span>
+                  <p className="text-gray-600 text-md mt-1">{order.ingredients?.join(", ")}</p>
+                </div>
+                <div className={`font-bold text-lg uppercase tracking-wider px-4 py-2 rounded-lg ${order.status === 'Ready' ? 'bg-yellow-400 text-yellow-900' : isMe ? 'bg-blue-200 text-blue-900' : 'bg-gray-100 text-gray-600'}`}>
+                  {order.status}
+                </div>
               </div>
-              <div className={`font-bold text-lg uppercase tracking-wider px-4 py-2 rounded-lg ${order.status === 'Ready' ? 'bg-yellow-400 text-yellow-900' : 'bg-gray-100 text-gray-600'}`}>
-                {order.status}
-              </div>
-            </div>
-          ))}
-          {orders.length === 0 && <p className="text-gray-500 text-center py-8 bg-white rounded-xl border border-gray-200">The queue is currently empty!</p>}
+            );
+          })}
+          {orders.length === 0 && <p className="text-gray-500 text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">The queue is currently empty!</p>}
         </div>
       </div>
     </div>
