@@ -1,19 +1,18 @@
-// app/chef/page.js
 "use client";
 import { useState, useEffect } from "react";
 import { db, auth } from "../../firebase";
-import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
-import { collection, onSnapshot, doc, updateDoc, getDoc, setDoc } from "firebase/firestore";
+import { signInWithEmailAndPassword, onAuthStateChanged, User } from "firebase/auth";
+import { collection, onSnapshot, doc, updateDoc, setDoc, DocumentData } from "firebase/firestore";
 
 export default function ChefDashboard() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<User | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   
   const [isActive, setIsActive] = useState(false);
-  const [ingredients, setIngredients] = useState([]);
+  const [ingredients, setIngredients] = useState<string[]>([]);
   const [newIngredient, setNewIngredient] = useState("");
-  const [orders, setOrders] = useState([]);
+  const [orders, setOrders] = useState<DocumentData[]>([]);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -24,29 +23,27 @@ export default function ChefDashboard() {
   }, []);
 
   const loadChefData = async () => {
-    // Listen to session settings
     const sessionRef = doc(db, "settings", "session");
     onSnapshot(sessionRef, (docSnap) => {
       if (docSnap.exists()) {
         setIsActive(docSnap.data().isActive);
         setIngredients(docSnap.data().availableIngredients || []);
       } else {
-        // Initialize if it doesn't exist
         setDoc(sessionRef, { isActive: false, availableIngredients: [] });
       }
     });
 
-    // Listen to orders
     onSnapshot(collection(db, "orders"), (snapshot) => {
       const allOrders = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter(order => order.status !== "Completed")
-        .sort((a, b) => a.createdAt - b.createdAt);
+        // @ts-ignore
+        .sort((a, b) => a.createdAt?.toMillis() - b.createdAt?.toMillis());
       setOrders(allOrders);
     });
   };
 
-  const handleLogin = (e) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     signInWithEmailAndPassword(auth, email, password).catch(err => alert(err.message));
   };
@@ -55,7 +52,7 @@ export default function ChefDashboard() {
     await updateDoc(doc(db, "settings", "session"), { isActive: !isActive });
   };
 
-  const addIngredient = async (e) => {
+  const addIngredient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newIngredient) return;
     const updated = [...ingredients, newIngredient];
@@ -63,12 +60,12 @@ export default function ChefDashboard() {
     setNewIngredient("");
   };
 
-  const removeIngredient = async (ingToRemove) => {
+  const removeIngredient = async (ingToRemove: string) => {
     const updated = ingredients.filter(i => i !== ingToRemove);
     await updateDoc(doc(db, "settings", "session"), { availableIngredients: updated });
   };
 
-  const updateOrderStatus = async (id, currentStatus) => {
+  const updateOrderStatus = async (id: string, currentStatus: string) => {
     const nextStatus = currentStatus === "In Queue" ? "Cooking" : currentStatus === "Cooking" ? "Ready" : "Completed";
     await updateDoc(doc(db, "orders", id), { status: nextStatus });
   };
@@ -107,7 +104,7 @@ export default function ChefDashboard() {
           <div className="flex flex-wrap gap-2">
             {ingredients.map(ing => (
               <span key={ing} className="bg-white border px-3 py-1 rounded flex items-center gap-2">
-                {ing} <button onClick={() => removeIngredient(ing)} className="text-red-500 font-bold text-lg leading-none">&times;</button>
+                {ing} <button type="button" onClick={() => removeIngredient(ing)} className="text-red-500 font-bold text-lg leading-none">&times;</button>
               </span>
             ))}
           </div>
@@ -120,7 +117,7 @@ export default function ChefDashboard() {
           <div key={order.id} className="bg-white border shadow p-4 rounded flex justify-between items-center">
             <div>
               <p className="font-bold text-lg">{order.name}</p>
-              <p className="text-gray-600">{order.ingredients.join(", ")}</p>
+              <p className="text-gray-600">{order.ingredients?.join(", ")}</p>
               {order.contact && <p className="text-sm text-blue-600">Contact: {order.contact}</p>}
             </div>
             <div className="flex items-center gap-4">
