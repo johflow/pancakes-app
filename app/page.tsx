@@ -26,7 +26,7 @@ export default function Home() {
 
     const unsubscribe = onSnapshot(collection(db, "orders"), (snapshot) => {
       const activeOrders = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .map(doc => ({ id: doc.id, ...doc.data() } as any))
         .filter(order => order.status !== "Completed")
         // @ts-ignore - bypassing strict timestamp typing for quick build
         .sort((a, b) => a.createdAt?.toMillis() - b.createdAt?.toMillis());

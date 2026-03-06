@@ -35,7 +35,7 @@ export default function ChefDashboard() {
 
     onSnapshot(collection(db, "orders"), (snapshot) => {
       const allOrders = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .map(doc => ({ id: doc.id, ...doc.data() } as any))
         .filter(order => order.status !== "Completed")
         // @ts-ignore
         .sort((a, b) => a.createdAt?.toMillis() - b.createdAt?.toMillis());
