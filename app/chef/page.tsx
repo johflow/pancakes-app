@@ -70,18 +70,20 @@ export default function ChefDashboard() {
     await updateDoc(doc(db, "orders", id), { status: nextStatus });
   };
 
-  if (!user) {
-    return (
-      <div className="max-w-md mx-auto mt-20 p-6 bg-gray-100 rounded">
-        <h2 className="text-2xl font-bold mb-4">Chef Login</h2>
-        <form onSubmit={handleLogin}>
-          <input className="w-full p-2 mb-4 border" placeholder="Email" onChange={e => setEmail(e.target.value)} />
-          <input className="w-full p-2 mb-4 border" type="password" placeholder="Password" onChange={e => setPassword(e.target.value)} />
-          <button className="w-full bg-blue-500 text-white p-2 rounded">Login</button>
-        </form>
-      </div>
-    );
-  }
+if (!user) {
+return (
+<div className="min-h-screen flex items-center justify-center bg-gray-900">
+<div className="max-w-md w-full p-8 bg-white rounded-xl shadow-lg">
+<h2 className="text-3xl font-bold mb-6 text-center text-gray-800">Chef Login</h2>
+<form onSubmit={handleLogin}>
+<input type="email" className="w-full p-3 mb-4 border border-gray-400 rounded bg-gray-50 text-gray-900 placeholder-gray-500" placeholder="Email" onChange={e => setEmail(e.target.value)} />
+<input type="password" className="w-full p-3 mb-6 border border-gray-400 rounded bg-gray-50 text-gray-900 placeholder-gray-500" placeholder="Password" onChange={e => setPassword(e.target.value)} />
+<button type="submit" className="w-full bg-blue-600 text-white font-bold p-3 rounded">Enter Kitchen</button>
+</form>
+</div>
+</div>
+);
+}
 
   return (
     <div className="max-w-4xl mx-auto p-6">
