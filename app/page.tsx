@@ -18,14 +18,13 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState(Date.now());
 
   useEffect(() => {
-    // 1. REAL-TIME Session Listener (Ingredients & Capacity)
+    // 1. REAL-TIME Session Listener
     const unsubSession = onSnapshot(doc(db, "settings", "session"), (docSnap) => {
       if (docSnap.exists() && docSnap.data().isActive) {
         setSessionActive(true);
         setIngredients(docSnap.data().availableIngredients || []);
         setMaxOrders(docSnap.data().maxOrders || 10);
         
-        // Auto-remove selected ingredients if the chef removes them live
         const liveIngredients = docSnap.data().availableIngredients || [];
         setSelectedIngredients(prev => prev.filter(ing => liveIngredients.includes(ing)));
       } else {
@@ -68,12 +67,10 @@ export default function Home() {
     e.preventDefault();
     if (!name) return alert("Need a name!");
 
-    // SAFETY CHECK 1: Did the queue fill up while they were typing?
     if (orders.length >= maxOrders) {
       return alert("Ah! The queue just filled up. Please wait for a spot to open.");
     }
 
-    // SAFETY CHECK 2: Did the chef run out of an ingredient while they were typing?
     const invalidIngredients = selectedIngredients.filter(ing => !ingredients.includes(ing));
     if (invalidIngredients.length > 0) {
       return alert(`Oops! The chef just ran out of: ${invalidIngredients.join(", ")}`);
@@ -87,7 +84,7 @@ export default function Home() {
       createdAt: serverTimestamp()
     });
 
-    const cooldownTime = Date.now() + (30 * 60 * 1000); // 30 mins
+    const cooldownTime = Date.now() + (30 * 60 * 1000);
     
     setMyOrderId(docRef.id);
     setCooldownUntil(cooldownTime);
@@ -115,7 +112,6 @@ export default function Home() {
       <div className="max-w-2xl mx-auto">
         <h1 className="text-4xl font-bold mb-8 text-center text-gray-900">🥞 Will's Party Pancakes</h1>
         
-        {/* State 1: User has an active ticket */}
         {myActiveOrder ? (
           <div className="bg-blue-50 border-2 border-blue-400 p-8 rounded-xl mb-10 text-center shadow-md">
             <h2 className="text-2xl font-bold text-blue-800 mb-2">🎟️ Your Pancake Ticket</h2>
@@ -131,24 +127,18 @@ export default function Home() {
               </div>
             </div>
           </div>
-        ) 
-        {/* State 2: User is on Cooldown */}
-        : isOnCooldown ? (
+        ) : isOnCooldown ? (
            <div className="bg-orange-50 border border-orange-200 p-8 rounded-xl mb-10 text-center shadow-sm">
             <h2 className="text-2xl font-bold text-orange-700 mb-2">Whoa there, hotcakes!</h2>
             <p className="text-gray-700 text-lg">You can place another order in <strong>{minutesLeft} minute{minutesLeft !== 1 ? 's' : ''}</strong>.</p>
           </div>
-        ) 
-        {/* State 3: Queue is Full (Hide Form) */}
-        : isQueueFull ? (
+        ) : isQueueFull ? (
           <div className="bg-red-50 border border-red-200 p-8 rounded-xl mb-10 text-center shadow-sm">
             <h2 className="text-2xl font-bold text-red-700 mb-2">Queue is at Capacity!</h2>
             <p className="text-gray-700 text-lg">The chef is slammed. Wait for an order to complete before placing yours.</p>
             <p className="text-sm text-red-600 font-bold mt-2">({orders.length} / {maxOrders} spots filled)</p>
           </div>
-        ) 
-        {/* State 4: Default Order Form */}
-        : (
+        ) : (
           <form onSubmit={submitOrder} className="bg-white p-8 rounded-xl shadow-md border border-gray-200 mb-10">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-gray-800">Place Your Order</h2>
