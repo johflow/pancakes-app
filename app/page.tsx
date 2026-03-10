@@ -1,12 +1,12 @@
 "use client";
 import { useState, useEffect } from "react";
 import { db } from "../firebase";
-import { collection, addDoc, onSnapshot, doc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, onSnapshot, doc, serverTimestamp, updateDoc, increment } from "firebase/firestore";
 
 export default function Home() {
   const [sessionActive, setSessionActive] = useState(false);
   const [ingredients, setIngredients] = useState<string[]>([]);
-  const [maxOrders, setMaxOrders] = useState<number>(10);
+  const [pancakesRemaining, setPancakesRemaining] = useState<number>(0);
   const [orders, setOrders] = useState<any[]>([]);
   
   const [name, setName] = useState("");
@@ -23,7 +23,7 @@ export default function Home() {
       if (docSnap.exists() && docSnap.data().isActive) {
         setSessionActive(true);
         setIngredients(docSnap.data().availableIngredients || []);
-        setMaxOrders(docSnap.data().maxOrders || 10);
+        setPancakesRemaining(docSnap.data().pancakesRemaining || 0);
         
         const liveIngredients = docSnap.data().availableIngredients || [];
         setSelectedIngredients(prev => prev.filter(ing => liveIngredients.includes(ing)));
@@ -67,8 +67,8 @@ export default function Home() {
     e.preventDefault();
     if (!name) return alert("Need a name!");
 
-    if (orders.length >= maxOrders) {
-      return alert("Ah! The queue just filled up. Please wait for a spot to open.");
+    if (pancakesRemaining <= 0) {
+      return alert("Ah! The chef just ran out of batter!");
     }
 
     const invalidIngredients = selectedIngredients.filter(ing => !ingredients.includes(ing));
@@ -76,12 +76,18 @@ export default function Home() {
       return alert(`Oops! The chef just ran out of: ${invalidIngredients.join(", ")}`);
     }
     
+    // 1. Add the order
     const docRef = await addDoc(collection(db, "orders"), {
       name,
       contact,
       ingredients: selectedIngredients,
       status: "In Queue",
       createdAt: serverTimestamp()
+    });
+
+    // 2. Subtract 1 from the master inventory safely
+    await updateDoc(doc(db, "settings", "session"), {
+      pancakesRemaining: increment(-1)
     });
 
     const cooldownTime = Date.now() + (30 * 60 * 1000);
@@ -95,7 +101,7 @@ export default function Home() {
   const myActiveOrder = orders.find(o => o.id === myOrderId);
   const isOnCooldown = cooldownUntil && cooldownUntil > currentTime;
   const minutesLeft = cooldownUntil ? Math.ceil((cooldownUntil - currentTime) / 60000) : 0;
-  const isQueueFull = orders.length >= maxOrders;
+  const isSoldOut = pancakesRemaining <= 0;
 
   if (!sessionActive) {
     return (
@@ -132,17 +138,17 @@ export default function Home() {
             <h2 className="text-2xl font-bold text-orange-700 mb-2">Whoa there, hotcakes!</h2>
             <p className="text-gray-700 text-lg">You can place another order in <strong>{minutesLeft} minute{minutesLeft !== 1 ? 's' : ''}</strong>.</p>
           </div>
-        ) : isQueueFull ? (
+        ) : isSoldOut ? (
           <div className="bg-red-50 border border-red-200 p-8 rounded-xl mb-10 text-center shadow-sm">
-            <h2 className="text-2xl font-bold text-red-700 mb-2">Queue is at Capacity!</h2>
-            <p className="text-gray-700 text-lg">The chef is slammed. Wait for an order to complete before placing yours.</p>
-            <p className="text-sm text-red-600 font-bold mt-2">({orders.length} / {maxOrders} spots filled)</p>
+            <h2 className="text-2xl font-bold text-red-700 mb-2">Sold Out!</h2>
+            <p className="text-gray-700 text-lg">The chef is completely out of batter for this round.</p>
+            <p className="text-sm text-red-600 font-bold mt-2">Check back later!</p>
           </div>
         ) : (
           <form onSubmit={submitOrder} className="bg-white p-8 rounded-xl shadow-md border border-gray-200 mb-10">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-gray-800">Place Your Order</h2>
-              <span className="text-sm font-bold bg-gray-100 text-gray-600 px-3 py-1 rounded-full">Capacity: {orders.length}/{maxOrders}</span>
+              <span className="text-sm font-bold bg-gray-100 text-gray-600 px-3 py-1 rounded-full">Remaining: {pancakesRemaining}</span>
             </div>
             
             <input className="w-full p-3 mb-4 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Your Name/Nickname" value={name} onChange={e => setName(e.target.value)} required />
