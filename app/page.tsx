@@ -1,35 +1,40 @@
 "use client";
 import { useState, useEffect } from "react";
 import { db } from "../firebase";
-import { collection, addDoc, onSnapshot, doc, getDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, onSnapshot, doc, serverTimestamp } from "firebase/firestore";
 
 export default function Home() {
   const [sessionActive, setSessionActive] = useState(false);
   const [ingredients, setIngredients] = useState<string[]>([]);
+  const [maxOrders, setMaxOrders] = useState<number>(10);
   const [orders, setOrders] = useState<any[]>([]);
   
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
   
-  // New State for Tracking User's Order & Cooldown
   const [myOrderId, setMyOrderId] = useState<string | null>(null);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
   useEffect(() => {
-    // Fetch Session
-    const fetchSession = async () => {
-      const sessionDoc = await getDoc(doc(db, "settings", "session"));
-      if (sessionDoc.exists() && sessionDoc.data().isActive) {
+    // 1. REAL-TIME Session Listener (Ingredients & Capacity)
+    const unsubSession = onSnapshot(doc(db, "settings", "session"), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().isActive) {
         setSessionActive(true);
-        setIngredients(sessionDoc.data().availableIngredients || []);
+        setIngredients(docSnap.data().availableIngredients || []);
+        setMaxOrders(docSnap.data().maxOrders || 10);
+        
+        // Auto-remove selected ingredients if the chef removes them live
+        const liveIngredients = docSnap.data().availableIngredients || [];
+        setSelectedIngredients(prev => prev.filter(ing => liveIngredients.includes(ing)));
+      } else {
+        setSessionActive(false);
       }
-    };
-    fetchSession();
+    });
 
-    // Listen to Orders
-    const unsubscribe = onSnapshot(collection(db, "orders"), (snapshot) => {
+    // 2. REAL-TIME Orders Listener
+    const unsubOrders = onSnapshot(collection(db, "orders"), (snapshot) => {
       const activeOrders = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as any))
         .filter(order => order.status !== "Completed")
@@ -38,17 +43,17 @@ export default function Home() {
       setOrders(activeOrders);
     });
 
-    // Load Local Storage Data
+    // 3. Local Storage Cooldown setup
     const savedOrderId = localStorage.getItem("pancakeOrderId");
     const savedCooldown = localStorage.getItem("pancakeCooldown");
     if (savedOrderId) setMyOrderId(savedOrderId);
     if (savedCooldown) setCooldownUntil(parseInt(savedCooldown, 10));
 
-    // Update current time every minute for the cooldown timer
     const interval = setInterval(() => setCurrentTime(Date.now()), 60000);
 
     return () => {
-      unsubscribe();
+      unsubSession();
+      unsubOrders();
       clearInterval(interval);
     };
   }, []);
@@ -62,6 +67,17 @@ export default function Home() {
   const submitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name) return alert("Need a name!");
+
+    // SAFETY CHECK 1: Did the queue fill up while they were typing?
+    if (orders.length >= maxOrders) {
+      return alert("Ah! The queue just filled up. Please wait for a spot to open.");
+    }
+
+    // SAFETY CHECK 2: Did the chef run out of an ingredient while they were typing?
+    const invalidIngredients = selectedIngredients.filter(ing => !ingredients.includes(ing));
+    if (invalidIngredients.length > 0) {
+      return alert(`Oops! The chef just ran out of: ${invalidIngredients.join(", ")}`);
+    }
     
     const docRef = await addDoc(collection(db, "orders"), {
       name,
@@ -71,8 +87,7 @@ export default function Home() {
       createdAt: serverTimestamp()
     });
 
-    // Set 30 minute cooldown (30 mins * 60 secs * 1000 ms)
-    const cooldownTime = Date.now() + (30 * 60 * 1000);
+    const cooldownTime = Date.now() + (30 * 60 * 1000); // 30 mins
     
     setMyOrderId(docRef.id);
     setCooldownUntil(cooldownTime);
@@ -80,10 +95,10 @@ export default function Home() {
     localStorage.setItem("pancakeCooldown", cooldownTime.toString());
   };
 
-  // Derived State
   const myActiveOrder = orders.find(o => o.id === myOrderId);
   const isOnCooldown = cooldownUntil && cooldownUntil > currentTime;
   const minutesLeft = cooldownUntil ? Math.ceil((cooldownUntil - currentTime) / 60000) : 0;
+  const isQueueFull = orders.length >= maxOrders;
 
   if (!sessionActive) {
     return (
@@ -100,7 +115,7 @@ export default function Home() {
       <div className="max-w-2xl mx-auto">
         <h1 className="text-4xl font-bold mb-8 text-center text-gray-900">🥞 Will's Party Pancakes</h1>
         
-        {/* Dynamic Top Section: Order Form OR Ticket OR Cooldown */}
+        {/* State 1: User has an active ticket */}
         {myActiveOrder ? (
           <div className="bg-blue-50 border-2 border-blue-400 p-8 rounded-xl mb-10 text-center shadow-md">
             <h2 className="text-2xl font-bold text-blue-800 mb-2">🎟️ Your Pancake Ticket</h2>
@@ -116,14 +131,30 @@ export default function Home() {
               </div>
             </div>
           </div>
-        ) : isOnCooldown ? (
+        ) 
+        {/* State 2: User is on Cooldown */}
+        : isOnCooldown ? (
            <div className="bg-orange-50 border border-orange-200 p-8 rounded-xl mb-10 text-center shadow-sm">
             <h2 className="text-2xl font-bold text-orange-700 mb-2">Whoa there, hotcakes!</h2>
             <p className="text-gray-700 text-lg">You can place another order in <strong>{minutesLeft} minute{minutesLeft !== 1 ? 's' : ''}</strong>.</p>
           </div>
-        ) : (
+        ) 
+        {/* State 3: Queue is Full (Hide Form) */}
+        : isQueueFull ? (
+          <div className="bg-red-50 border border-red-200 p-8 rounded-xl mb-10 text-center shadow-sm">
+            <h2 className="text-2xl font-bold text-red-700 mb-2">Queue is at Capacity!</h2>
+            <p className="text-gray-700 text-lg">The chef is slammed. Wait for an order to complete before placing yours.</p>
+            <p className="text-sm text-red-600 font-bold mt-2">({orders.length} / {maxOrders} spots filled)</p>
+          </div>
+        ) 
+        {/* State 4: Default Order Form */}
+        : (
           <form onSubmit={submitOrder} className="bg-white p-8 rounded-xl shadow-md border border-gray-200 mb-10">
-            <h2 className="text-2xl font-bold mb-6 text-gray-800">Place Your Order</h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">Place Your Order</h2>
+              <span className="text-sm font-bold bg-gray-100 text-gray-600 px-3 py-1 rounded-full">Capacity: {orders.length}/{maxOrders}</span>
+            </div>
+            
             <input className="w-full p-3 mb-4 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Your Name/Nickname" value={name} onChange={e => setName(e.target.value)} required />
             <input className="w-full p-3 mb-6 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Phone Number (Just in case)" value={contact} onChange={e => setContact(e.target.value)} />
             
@@ -139,7 +170,6 @@ export default function Home() {
           </form>
         )}
 
-        {/* The Live Queue */}
         <h2 className="text-3xl font-bold mb-6 text-gray-900 border-b-2 border-gray-200 pb-2">Live Queue</h2>
         <div className="space-y-4">
           {orders.map((order, index) => {

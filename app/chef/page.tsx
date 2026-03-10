@@ -11,6 +11,11 @@ export default function ChefDashboard() {
   
   const [isActive, setIsActive] = useState(false);
   const [ingredients, setIngredients] = useState<string[]>([]);
+  
+  // Database capacity vs Local input capacity
+  const [maxOrders, setMaxOrders] = useState<number>(10);
+  const [localCapacityInput, setLocalCapacityInput] = useState<string>("10");
+  
   const [newIngredient, setNewIngredient] = useState("");
   const [orders, setOrders] = useState<any[]>([]);
 
@@ -28,8 +33,11 @@ export default function ChefDashboard() {
       if (docSnap.exists()) {
         setIsActive(docSnap.data().isActive);
         setIngredients(docSnap.data().availableIngredients || []);
+        setMaxOrders(docSnap.data().maxOrders || 10);
+        // Keep the local input synced with the database when it changes remotely
+        setLocalCapacityInput(String(docSnap.data().maxOrders || 10));
       } else {
-        setDoc(sessionRef, { isActive: false, availableIngredients: [] });
+        setDoc(sessionRef, { isActive: false, availableIngredients: [], maxOrders: 10 });
       }
     });
 
@@ -50,6 +58,13 @@ export default function ChefDashboard() {
 
   const toggleSession = async () => {
     await updateDoc(doc(db, "settings", "session"), { isActive: !isActive });
+  };
+  
+  const updateMaxCapacity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const newVal = parseInt(localCapacityInput, 10);
+    if (isNaN(newVal) || newVal < 1) return alert("Please enter a valid number greater than 0.");
+    await updateDoc(doc(db, "settings", "session"), { maxOrders: newVal });
   };
 
   const addIngredient = async (e: React.FormEvent) => {
@@ -87,18 +102,12 @@ export default function ChefDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 py-10 px-6 font-sans">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         <h1 className="text-4xl font-bold mb-8 text-gray-900">👨‍🍳 Chef Command Center</h1>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-            <h2 className="text-2xl font-bold mb-4 text-gray-800">Session Control</h2>
-            <button onClick={toggleSession} className={`w-full p-4 text-white font-bold text-lg rounded-lg transition-colors shadow-sm ${isActive ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}>
-              {isActive ? "End Session (Stop Orders)" : "Start Session (Accept Orders)"}
-            </button>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+          {/* Live Ingredients Panel */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 col-span-1 md:col-span-2">
             <h2 className="text-2xl font-bold mb-4 text-gray-800">Live Ingredients</h2>
             <form onSubmit={addIngredient} className="flex mb-4 gap-2">
               <input className="flex-1 p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="New ingredient..." value={newIngredient} onChange={e => setNewIngredient(e.target.value)} />
@@ -111,6 +120,38 @@ export default function ChefDashboard() {
                 </span>
               ))}
               {ingredients.length === 0 && <p className="text-gray-500 text-sm">No ingredients added yet.</p>}
+            </div>
+          </div>
+
+          {/* Intake Control Panel */}
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-center h-full">
+              <h2 className="text-xl font-bold mb-4 text-gray-800">Order Intake</h2>
+              
+              <form onSubmit={updateMaxCapacity} className="flex items-end gap-3 mb-6">
+                <div className="flex-1">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Max Capacity</label>
+                  <input 
+                    type="number" 
+                    min="1"
+                    className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={localCapacityInput}
+                    onChange={(e) => setLocalCapacityInput(e.target.value)}
+                  />
+                </div>
+                <button type="submit" className="bg-gray-800 hover:bg-gray-900 text-white font-bold px-4 py-3 rounded-lg transition-colors">
+                  Set
+                </button>
+              </form>
+
+              <div className="text-center mb-4">
+                <span className="text-sm text-gray-500 font-bold uppercase tracking-wider">Current Queue:</span>
+                <p className="text-2xl font-black text-gray-900">{orders.length} / {maxOrders}</p>
+              </div>
+              
+              <button onClick={toggleSession} className={`w-full p-4 text-white font-bold text-lg rounded-lg transition-colors shadow-sm ${isActive ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}>
+                {isActive ? "Stop Accepting Orders" : "Start Accepting Orders"}
+              </button>
             </div>
           </div>
         </div>
