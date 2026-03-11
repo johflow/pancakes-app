@@ -13,6 +13,9 @@ export default function Home() {
   const [contact, setContact] = useState("");
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
   
+  // NEW: The lock to prevent spam clicking
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
   const [myOrderId, setMyOrderId] = useState<string | null>(null);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -65,6 +68,10 @@ export default function Home() {
 
   const submitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // SAFETY CHECK: If already submitting, ignore extra clicks
+    if (isSubmitting) return; 
+    
     if (!name) return alert("Need a name!");
 
     if (pancakesRemaining <= 0) {
@@ -76,26 +83,37 @@ export default function Home() {
       return alert(`Oops! The chef just ran out of: ${invalidIngredients.join(", ")}`);
     }
     
-    // 1. Add the order
-    const docRef = await addDoc(collection(db, "orders"), {
-      name,
-      contact,
-      ingredients: selectedIngredients,
-      status: "In Queue",
-      createdAt: serverTimestamp()
-    });
-
-    // 2. Subtract 1 from the master inventory safely
-    await updateDoc(doc(db, "settings", "session"), {
-      pancakesRemaining: increment(-1)
-    });
-
-    const cooldownTime = Date.now() + (30 * 60 * 1000);
+    // Lock the form!
+    setIsSubmitting(true);
     
-    setMyOrderId(docRef.id);
-    setCooldownUntil(cooldownTime);
-    localStorage.setItem("pancakeOrderId", docRef.id);
-    localStorage.setItem("pancakeCooldown", cooldownTime.toString());
+    try {
+      // 1. Add the order
+      const docRef = await addDoc(collection(db, "orders"), {
+        name,
+        contact,
+        ingredients: selectedIngredients,
+        status: "In Queue",
+        createdAt: serverTimestamp()
+      });
+
+      // 2. Subtract 1 from the master inventory safely
+      await updateDoc(doc(db, "settings", "session"), {
+        pancakesRemaining: increment(-1)
+      });
+
+      const cooldownTime = Date.now() + (30 * 60 * 1000);
+      
+      setMyOrderId(docRef.id);
+      setCooldownUntil(cooldownTime);
+      localStorage.setItem("pancakeOrderId", docRef.id);
+      localStorage.setItem("pancakeCooldown", cooldownTime.toString());
+    } catch (error) {
+      console.error("Error submitting order:", error);
+      alert("Something went wrong placing your order! Please try again.");
+    } finally {
+      // Unlock the form when done (though they will be viewing the ticket screen now)
+      setIsSubmitting(false);
+    }
   };
 
   const myActiveOrder = orders.find(o => o.id === myOrderId);
@@ -151,18 +169,24 @@ export default function Home() {
               <span className="text-sm font-bold bg-gray-100 text-gray-600 px-3 py-1 rounded-full">Remaining: {pancakesRemaining}</span>
             </div>
             
-            <input className="w-full p-3 mb-4 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Your Name/Nickname" value={name} onChange={e => setName(e.target.value)} required />
-            <input className="w-full p-3 mb-6 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Phone Number (Just in case)" value={contact} onChange={e => setContact(e.target.value)} />
+            <input className="w-full p-3 mb-4 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Your Name/Nickname" value={name} onChange={e => setName(e.target.value)} required disabled={isSubmitting} />
+            <input className="w-full p-3 mb-6 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Phone Number (Just in case)" value={contact} onChange={e => setContact(e.target.value)} disabled={isSubmitting} />
             
             <p className="mb-3 font-bold text-gray-700">Available Ingredients:</p>
             <div className="flex flex-wrap gap-2 mb-8">
               {ingredients.map(ing => (
-                <button type="button" key={ing} onClick={() => handleToggleIngredient(ing)} className={`px-4 py-2 rounded-full border font-medium transition-colors ${selectedIngredients.includes(ing) ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'}`}>
+                <button type="button" key={ing} onClick={() => handleToggleIngredient(ing)} disabled={isSubmitting} className={`px-4 py-2 rounded-full border font-medium transition-colors ${selectedIngredients.includes(ing) ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'} ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}>
                   {ing}
                 </button>
               ))}
             </div>
-            <button type="submit" className="w-full bg-green-600 text-white p-4 rounded-lg font-bold text-xl hover:bg-green-700 transition-colors shadow-sm">Order Pancake</button>
+            <button 
+              type="submit" 
+              disabled={isSubmitting} 
+              className={`w-full text-white p-4 rounded-lg font-bold text-xl transition-colors shadow-sm ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+            >
+              {isSubmitting ? "Sending to Kitchen..." : "Order Pancake"}
+            </button>
           </form>
         )}
 
