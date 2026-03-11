@@ -13,7 +13,6 @@ export default function Home() {
   const [contact, setContact] = useState("");
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
   
-  // NEW: The lock to prevent spam clicking
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [myOrderId, setMyOrderId] = useState<string | null>(null);
@@ -21,7 +20,6 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState(Date.now());
 
   useEffect(() => {
-    // 1. REAL-TIME Session Listener
     const unsubSession = onSnapshot(doc(db, "settings", "session"), (docSnap) => {
       if (docSnap.exists() && docSnap.data().isActive) {
         setSessionActive(true);
@@ -35,7 +33,6 @@ export default function Home() {
       }
     });
 
-    // 2. REAL-TIME Orders Listener
     const unsubOrders = onSnapshot(collection(db, "orders"), (snapshot) => {
       const activeOrders = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as any))
@@ -45,7 +42,6 @@ export default function Home() {
       setOrders(activeOrders);
     });
 
-    // 3. Local Storage Cooldown setup
     const savedOrderId = localStorage.getItem("pancakeOrderId");
     const savedCooldown = localStorage.getItem("pancakeCooldown");
     if (savedOrderId) setMyOrderId(savedOrderId);
@@ -68,11 +64,28 @@ export default function Home() {
 
   const submitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // SAFETY CHECK: If already submitting, ignore extra clicks
     if (isSubmitting) return; 
+
+    // --- INPUT SANITIZATION & VALIDATION ---
+    const cleanName = name.trim();
+    const cleanContact = contact.trim();
+
+    if (cleanName.length < 2 || cleanName.length > 20) {
+      return alert("Please enter a valid name (2 to 20 characters).");
+    }
     
-    if (!name) return alert("Need a name!");
+    // Allows letters (including accents), numbers, spaces, hyphens, and apostrophes
+    if (!/^[a-zA-ZÀ-ÿ0-9\s\-']+$/.test(cleanName)) {
+      return alert("Please use only standard letters, numbers, and spaces for your name.");
+    }
+
+    if (cleanContact) {
+      // Allows digits, spaces, dashes, parentheses, and + (between 7 and 15 chars)
+      if (!/^[\d\+\-\(\)\s]{7,15}$/.test(cleanContact)) {
+        return alert("Please enter a valid phone number, or leave it blank.");
+      }
+    }
+    // ---------------------------------------
 
     if (pancakesRemaining <= 0) {
       return alert("Ah! The chef just ran out of batter!");
@@ -83,20 +96,17 @@ export default function Home() {
       return alert(`Oops! The chef just ran out of: ${invalidIngredients.join(", ")}`);
     }
     
-    // Lock the form!
     setIsSubmitting(true);
     
     try {
-      // 1. Add the order
       const docRef = await addDoc(collection(db, "orders"), {
-        name,
-        contact,
+        name: cleanName, // Save the cleaned version!
+        contact: cleanContact,
         ingredients: selectedIngredients,
         status: "In Queue",
         createdAt: serverTimestamp()
       });
 
-      // 2. Subtract 1 from the master inventory safely
       await updateDoc(doc(db, "settings", "session"), {
         pancakesRemaining: increment(-1)
       });
@@ -111,7 +121,6 @@ export default function Home() {
       console.error("Error submitting order:", error);
       alert("Something went wrong placing your order! Please try again.");
     } finally {
-      // Unlock the form when done (though they will be viewing the ticket screen now)
       setIsSubmitting(false);
     }
   };
@@ -169,8 +178,23 @@ export default function Home() {
               <span className="text-sm font-bold bg-gray-100 text-gray-600 px-3 py-1 rounded-full">Remaining: {pancakesRemaining}</span>
             </div>
             
-            <input className="w-full p-3 mb-4 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Your Name/Nickname" value={name} onChange={e => setName(e.target.value)} required disabled={isSubmitting} />
-            <input className="w-full p-3 mb-6 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Phone Number (Just in case)" value={contact} onChange={e => setContact(e.target.value)} disabled={isSubmitting} />
+            <input 
+              maxLength={20}
+              className="w-full p-3 mb-4 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+              placeholder="Your Name/Nickname (Max 20 chars)" 
+              value={name} 
+              onChange={e => setName(e.target.value)} 
+              required 
+              disabled={isSubmitting} 
+            />
+            <input 
+              maxLength={15}
+              className="w-full p-3 mb-6 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+              placeholder="Phone Number (Optional)" 
+              value={contact} 
+              onChange={e => setContact(e.target.value)} 
+              disabled={isSubmitting} 
+            />
             
             <p className="mb-3 font-bold text-gray-700">Available Ingredients:</p>
             <div className="flex flex-wrap gap-2 mb-8">
