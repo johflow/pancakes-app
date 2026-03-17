@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { db } from "../firebase";
-import { collection, addDoc, onSnapshot, doc, serverTimestamp, updateDoc, increment } from "firebase/firestore";
+import { collection, addDoc, setDoc, onSnapshot, doc, serverTimestamp, updateDoc, increment } from "firebase/firestore";
 
 export default function Home() {
   const [sessionActive, setSessionActive] = useState(false);
@@ -66,7 +66,6 @@ export default function Home() {
     e.preventDefault();
     if (isSubmitting) return; 
 
-    // --- INPUT SANITIZATION & VALIDATION ---
     const cleanName = name.trim();
     const cleanContact = contact.trim();
 
@@ -74,18 +73,15 @@ export default function Home() {
       return alert("Please enter a valid name (2 to 20 characters).");
     }
     
-    // Allows letters (including accents), numbers, spaces, hyphens, and apostrophes
     if (!/^[a-zA-ZÀ-ÿ0-9\s\-']+$/.test(cleanName)) {
       return alert("Please use only standard letters, numbers, and spaces for your name.");
     }
 
     if (cleanContact) {
-      // Allows digits, spaces, dashes, parentheses, and + (between 7 and 15 chars)
       if (!/^[\d\+\-\(\)\s]{7,15}$/.test(cleanContact)) {
         return alert("Please enter a valid phone number, or leave it blank.");
       }
     }
-    // ---------------------------------------
 
     if (pancakesRemaining <= 0) {
       return alert("Ah! The chef just ran out of batter!");
@@ -99,13 +95,21 @@ export default function Home() {
     setIsSubmitting(true);
     
     try {
+      // 1. Add PUBLIC order data
       const docRef = await addDoc(collection(db, "orders"), {
-        name: cleanName, // Save the cleaned version!
-        contact: cleanContact,
+        name: cleanName, 
         ingredients: selectedIngredients,
         status: "In Queue",
         createdAt: serverTimestamp()
       });
+
+      // 2. Add PRIVATE contact info using the SAME ID
+      if (cleanContact) {
+        await setDoc(doc(db, "private_contacts", docRef.id), {
+          contact: cleanContact,
+          createdAt: serverTimestamp()
+        });
+      }
 
       await updateDoc(doc(db, "settings", "session"), {
         pancakesRemaining: increment(-1)

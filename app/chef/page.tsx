@@ -17,6 +17,7 @@ export default function ChefDashboard() {
   
   const [newIngredient, setNewIngredient] = useState("");
   const [orders, setOrders] = useState<any[]>([]);
+  const [contacts, setContacts] = useState<Record<string, string>>({}); // Maps Order ID to Phone Number
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -46,6 +47,15 @@ export default function ChefDashboard() {
         // @ts-ignore
         .sort((a, b) => a.createdAt?.toMillis() - b.createdAt?.toMillis());
       setOrders(allOrders);
+    });
+
+    // Fetch the private contacts
+    onSnapshot(collection(db, "private_contacts"), (snapshot) => {
+      const contactMap: Record<string, string> = {};
+      snapshot.forEach(doc => {
+        contactMap[doc.id] = doc.data().contact;
+      });
+      setContacts(contactMap);
     });
   };
 
@@ -161,7 +171,8 @@ export default function ChefDashboard() {
               <div>
                 <p className="font-bold text-xl text-gray-900">{order.name}</p>
                 <p className="text-gray-600 font-medium">{order.ingredients?.join(", ")}</p>
-                {order.contact && <p className="text-sm text-blue-600 mt-1">Contact: {order.contact}</p>}
+                {/* Dynamically pull contact from the private state mapping */}
+                {contacts[order.id] && <p className="text-sm text-blue-600 mt-1">Contact: {contacts[order.id]}</p>}
               </div>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                 <span className={`font-bold px-3 py-1 rounded-lg text-sm uppercase tracking-wider ${order.status === 'In Queue' ? 'bg-gray-100 text-gray-600' : order.status === 'Cooking' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-800'}`}>
